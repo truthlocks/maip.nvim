@@ -1,0 +1,421 @@
+*maip.txt*  Machine Agent Identity Protocol for Neovim
+
+Author:   Truthlocks Inc.
+License:  Apache 2.0
+Version:  1.0.0
+
+==============================================================================
+CONTENTS                                                       *maip-contents*
+
+  1. Overview ...................... |maip-overview|
+  2. Installation .................. |maip-installation|
+  3. Configuration ................. |maip-configuration|
+  4. Commands ...................... |maip-commands|
+  5. Keymaps ....................... |maip-keymaps|
+  6. Telescope ..................... |maip-telescope|
+  7. Statusline .................... |maip-statusline|
+  8. Auto Receipt .................. |maip-auto-receipt|
+  9. API ........................... |maip-api|
+
+==============================================================================
+1. OVERVIEW                                                    *maip-overview*
+
+MAIP (Machine Agent Identity Protocol) is a protocol for establishing
+verifiable identity and trust for AI agents and automated systems.
+
+This Neovim plugin integrates MAIP directly into your editor, allowing you
+to:
+
+- Register AI agents with the MAIP API
+- Create cryptographic receipts for file edits and git commits
+- Verify receipt authenticity
+- Monitor trust scores in real-time
+- Automatically generate receipts on git commit
+- Browse receipts and agents via Telescope pickers
+
+==============================================================================
+2. INSTALLATION                                            *maip-installation*
+
+lazy.nvim: ~
+>lua
+  {
+    "truthlocks/maip-neovim",
+    opts = {
+      api_key = "",           -- or set MAIP_API_KEY env var
+      tenant_id = "",         -- or set MAIP_TENANT_ID env var
+      agent_id = "",          -- or set MAIP_AGENT_ID env var
+    },
+    dependencies = {
+      "nvim-telescope/telescope.nvim",  -- optional
+    },
+  }
+<
+
+packer.nvim: ~
+>lua
+  use {
+    "truthlocks/maip-neovim",
+    config = function()
+      require("maip").setup({
+        api_key = "",
+        tenant_id = "",
+        agent_id = "",
+      })
+    end,
+  }
+<
+
+Manual: ~
+
+Clone the repository into your Neovim packages directory and call setup:
+>lua
+  require("maip").setup({
+    api_key = vim.env.MAIP_API_KEY,
+    tenant_id = vim.env.MAIP_TENANT_ID,
+    agent_id = vim.env.MAIP_AGENT_ID,
+  })
+<
+
+==============================================================================
+3. CONFIGURATION                                        *maip-configuration*
+
+Pass a table to `require("maip").setup(opts)` to override defaults.
+
+                                                            *maip.api_url*
+api_url ~
+  Type: `string`
+  Default: `"https://api.truthlocks.com/v1/machine-identity"`
+
+  The base URL for the MAIP API.
+
+                                                            *maip.api_key*
+api_key ~
+  Type: `string`
+  Default: `""` (falls back to `MAIP_API_KEY` env var)
+
+  Your MAIP API key for authentication.
+
+                                                          *maip.tenant_id*
+tenant_id ~
+  Type: `string`
+  Default: `""` (falls back to `MAIP_TENANT_ID` env var)
+
+  Your tenant ID for multi-tenant isolation.
+
+                                                           *maip.agent_id*
+agent_id ~
+  Type: `string`
+  Default: `""` (falls back to `MAIP_AGENT_ID` env var)
+
+  The agent ID for this Neovim instance. Set after registration.
+
+                                              *maip.auto_receipt_on_commit*
+auto_receipt_on_commit ~
+  Type: `boolean`
+  Default: `true`
+
+  Automatically create a MAIP receipt when a git commit is made.
+  Works with native git, fugitive, and neogit.
+
+                                             *maip.show_trust_virtual_text*
+show_trust_virtual_text ~
+  Type: `boolean`
+  Default: `true`
+
+  Show trust scores as virtual text next to agent ID patterns in buffers.
+
+                                              *maip.trust_refresh_interval*
+trust_refresh_interval ~
+  Type: `number`
+  Default: `60`
+
+  Interval in seconds between automatic trust score refreshes.
+
+                                                    *maip.request_timeout*
+request_timeout ~
+  Type: `number`
+  Default: `30`
+
+  HTTP request timeout in seconds.
+
+                                                       *maip.max_retries*
+max_retries ~
+  Type: `number`
+  Default: `3`
+
+  Maximum number of retry attempts for failed API requests.
+
+                                                        *maip.retry_delay*
+retry_delay ~
+  Type: `number`
+  Default: `1`
+
+  Base delay in seconds between retries (exponential backoff).
+
+                                                           *maip.keymaps*
+keymaps ~
+  Type: `table`
+  Default:
+>lua
+    {
+      create_receipt = "<leader>mc",
+      verify_receipt = "<leader>mv",
+      list_receipts  = "<leader>ml",
+      show_trust     = "<leader>mt",
+      register_agent = "<leader>mr",
+      dashboard      = "<leader>md",
+    }
+<
+  Set any keymap to `false` to disable it.
+
+                                                             *maip.signs*
+signs ~
+  Type: `table`
+  Default:
+>lua
+    {
+      high_trust   = { text = "●", hl = "DiagnosticOk" },
+      medium_trust = { text = "●", hl = "DiagnosticWarn" },
+      low_trust    = { text = "●", hl = "DiagnosticError" },
+    }
+<
+  Sign/icon configuration for trust score display.
+
+                                                  *maip.trust_thresholds*
+trust_thresholds ~
+  Type: `table`
+  Default: `{ high = 0.8, medium = 0.5 }`
+
+  Thresholds for categorizing trust scores.
+
+                                                         *maip.telescope*
+telescope ~
+  Type: `boolean`
+  Default: `true`
+
+  Enable Telescope integration when telescope.nvim is available.
+
+==============================================================================
+4. COMMANDS                                                  *maip-commands*
+
+                                                      *:MAIPRegisterAgent*
+:MAIPRegisterAgent [name] [type] ~
+
+  Register a new agent with the MAIP API. If name is omitted, an input
+  prompt is shown. Valid types: editor, ci, reviewer, deployer, monitor,
+  scanner. Default type is "editor".
+
+  The returned agent_id is automatically set in the running config.
+
+                                                      *:MAIPCreateReceipt*
+:MAIPCreateReceipt ~
+
+  Create a MAIP receipt for the current buffer. The buffer content is
+  hashed with SHA-256 and submitted along with file path, git branch,
+  and git commit information.
+
+                                                      *:MAIPVerifyReceipt*
+:MAIPVerifyReceipt [id] ~
+
+  Verify a MAIP receipt by its ID. If no ID is provided, an input prompt
+  is shown. The verification result is displayed in a floating window.
+
+                                                       *:MAIPListReceipts*
+:MAIPListReceipts ~
+
+  List all receipts. Opens a Telescope picker if telescope.nvim is
+  available and configured; otherwise displays a floating window.
+
+  In the Telescope picker, press <CR> on a receipt to verify it.
+
+                                                         *:MAIPShowTrust*
+:MAIPShowTrust [agent_id] ~
+
+  Show the trust score for an agent. If no agent_id is provided, uses
+  the configured agent_id. Displays a floating window with score,
+  visual bar, and details.
+
+                                                        *:MAIPListAgents*
+:MAIPListAgents ~
+
+  List all registered agents. Opens a Telescope picker if available;
+  otherwise displays a floating window.
+
+                                                         *:MAIPDashboard*
+:MAIPDashboard ~
+
+  Open the MAIP dashboard in a new scratch buffer. Shows configuration,
+  git context, keymaps, commands, registered agents, and recent receipts.
+
+  Press 'q' to close, 'r' to refresh.
+
+                                                            *:MAIPSetup*
+:MAIPSetup [key=value ...] ~
+
+  Initialize the plugin with optional key=value arguments. Useful for
+  testing or when not using a Lua plugin manager.
+
+==============================================================================
+5. KEYMAPS                                                    *maip-keymaps*
+
+Default keymaps (all in normal mode):
+
+  <leader>mc    Create receipt for current buffer  |:MAIPCreateReceipt|
+  <leader>mv    Verify a receipt                   |:MAIPVerifyReceipt|
+  <leader>ml    List receipts                      |:MAIPListReceipts|
+  <leader>mt    Show trust score                   |:MAIPShowTrust|
+  <leader>mr    Register agent                     |:MAIPRegisterAgent|
+  <leader>md    Open dashboard                     |:MAIPDashboard|
+
+Disable individual keymaps by setting them to `false` in setup:
+>lua
+  require("maip").setup({
+    keymaps = {
+      create_receipt = false,  -- disable this keymap
+    },
+  })
+<
+
+==============================================================================
+6. TELESCOPE                                                *maip-telescope*
+
+When telescope.nvim is installed and |maip.telescope| is `true`, two
+pickers are registered:
+
+  :Telescope maip receipts ~
+    Browse and search receipts. Preview shows receipt details.
+    Press <CR> to verify the selected receipt.
+
+  :Telescope maip agents ~
+    Browse and search agents. Preview shows trust score and details.
+    Press <CR> to show trust details for the selected agent.
+
+The pickers are also available programmatically:
+>lua
+  require("telescope").extensions.maip.receipts()
+  require("telescope").extensions.maip.agents()
+<
+
+==============================================================================
+7. STATUSLINE                                              *maip-statusline*
+
+The plugin provides statusline components compatible with popular
+statusline plugins.
+
+lualine: ~
+>lua
+  require("lualine").setup({
+    sections = {
+      lualine_x = {
+        require("maip.statusline").lualine(),
+      },
+    },
+  })
+<
+
+heirline: ~
+>lua
+  local MAIPComponent = {
+    provider = require("maip.statusline").heirline_provider(),
+    condition = require("maip.statusline").condition(),
+  }
+<
+
+Generic (any statusline): ~
+>lua
+  local maip_status = require("maip.statusline").component()
+  -- Returns: "MAIP: ● 0.85" or "" if not configured
+<
+
+==============================================================================
+8. AUTO RECEIPT                                          *maip-auto-receipt*
+
+When |maip.auto_receipt_on_commit| is `true`, the plugin automatically
+creates a MAIP receipt whenever you make a git commit. This works with:
+
+  - Native git (COMMIT_EDITMSG / gitcommit filetype)
+  - tpope/vim-fugitive (FugitiveChanged event)
+  - NeogitOrg/neogit (NeogitCommitComplete event)
+
+The receipt includes the commit hash, list of changed files, branch
+name, and remote URL.
+
+==============================================================================
+9. API                                                          *maip-api*
+
+All modules are available under `require("maip.MODULE")`.
+
+maip.config ~
+  `setup(opts)`        Initialize configuration
+  `get()`              Get current config (errors if not initialized)
+  `is_initialized()`   Check if setup() has been called
+  `validate()`         Validate required config fields
+
+maip.client ~
+  `request(method, path, opts)`  Make an async HTTP request
+  `get(path, opts)`              Async GET request
+  `post(path, opts)`             Async POST request
+  `put(path, opts)`              Async PUT request
+  `delete(path, opts)`           Async DELETE request
+
+maip.receipts ~
+  `create_for_buffer(bufnr, callback)`           Create receipt for buffer
+  `create_for_commit(hash, files, callback)`     Create receipt for commit
+  `verify(receipt_id, callback)`                 Verify a receipt
+  `list(filters, callback)`                      List receipts
+  `show_list_float(receipt_list)`                Show receipts in float
+
+maip.agents ~
+  `register(name, type, callback)`     Register an agent
+  `get_trust(agent_id, callback)`      Get trust score
+  `list(callback)`                     List agents
+  `show_details_float(agent_id)`       Show agent details
+  `get_cached_trust(agent_id)`         Get cached trust score
+  `clear_cache()`                      Clear agent cache
+
+maip.trust ~
+  `show_virtual_text(bufnr)`       Show trust virtual text
+  `show_trust_float(agent_id)`     Show trust in floating window
+  `refresh_all()`                  Refresh all cached trust scores
+  `start_refresh_timer()`          Start periodic refresh
+  `stop_refresh_timer()`           Stop periodic refresh
+  `clear_virtual_text(bufnr)`      Clear trust virtual text
+  `get_sign_for_score(score)`      Get sign config for score
+  `format_trust(score)`            Format trust for display
+
+maip.ui ~
+  `float(title, lines, opts)`      Show floating window
+  `input(prompt, callback)`        Show input prompt
+  `notify(msg, level)`             Show notification
+  `error(msg)`                     Show error notification
+  `warn(msg)`                      Show warning notification
+  `dashboard()`                    Open dashboard
+
+maip.statusline ~
+  `component()`                    Statusline string
+  `lualine()`                      Lualine component table
+  `heirline_provider()`            Heirline provider function
+  `condition()`                    Visibility condition function
+
+maip.telescope ~
+  `is_available()`                 Check if Telescope is available
+  `receipts(opts)`                 Open receipt picker
+  `agents(opts)`                   Open agent picker
+
+maip.utils ~
+  `sha256(str)`                    SHA-256 hash
+  `json_encode(tbl)`               JSON encode
+  `json_decode(str)`               JSON decode
+  `format_time(timestamp)`         Format timestamp
+  `git_branch()`                   Get current git branch
+  `git_commit_hash()`              Get short commit hash
+  `git_commit_hash_full()`         Get full commit hash
+  `git_files_changed()`            Get files in last commit
+  `git_remote_url()`               Get remote origin URL
+  `schedule(fn)`                   Schedule on main loop
+  `truncate(str, max)`             Truncate string
+  `pad_right(str, min)`            Pad string right
+  `iso_timestamp()`                Current UTC ISO timestamp
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
