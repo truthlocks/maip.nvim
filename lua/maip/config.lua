@@ -20,7 +20,7 @@ local M = {}
 --- Default configuration values for the MAIP plugin.
 --- @type table
 M.defaults = {
-  api_url = "https://api.truthlocks.com/v1/machine-identity",
+  api_url = "https://api.truthlocks.com/v1",
   api_key = "",
   tenant_id = "",
   agent_id = "",

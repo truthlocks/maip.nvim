@@ -42,9 +42,9 @@ function M.register(name, agent_type, callback)
   agent_type = agent_type or "editor"
 
   local payload = {
-    name = name,
+    display_name = name,
     agent_type = agent_type,
-    capabilities = { "file_edit", "git_commit", "code_review" },
+    scopes = { "file_edit", "git_commit", "code_review" },
     metadata = {
       editor = "neovim",
       plugin_version = "1.0.0",
@@ -120,7 +120,8 @@ function M.get_trust(agent_id, callback)
     return
   end
 
-  client.get("/agents/" .. agent_id .. "/trust", {
+  local encoded_id = vim.uri_encode(agent_id, "rfc2396")
+  client.get("/agents/" .. encoded_id .. "/trust-score", {
     on_success = function(data)
       -- Update cache
       M._cache[agent_id] = M._cache[agent_id] or {}
@@ -185,7 +186,8 @@ function M.show_details_float(agent_id)
     return
   end
 
-  client.get("/agents/" .. agent_id, {
+  local encoded_id = vim.uri_encode(agent_id, "rfc2396")
+  client.get("/agents/" .. encoded_id, {
     on_success = function(data)
       local lines = {
         "Agent Details",

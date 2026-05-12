@@ -58,13 +58,16 @@ local function build_curl_args(method, url, body, cfg)
     "Accept: application/json",
     "-H",
     "X-API-Key: " .. cfg.api_key,
-    "-H",
-    "X-Tenant-ID: " .. cfg.tenant_id,
     "--max-time",
     tostring(cfg.request_timeout),
     "-w",
     "\n%{http_code}",
   }
+
+  if cfg.tenant_id ~= "" and not cfg.api_key:find("^tl_live_") then
+    table.insert(args, "-H")
+    table.insert(args, "X-Tenant-ID: " .. cfg.tenant_id)
+  end
 
   if body and (method == "POST" or method == "PUT" or method == "PATCH") then
     table.insert(args, "-d")
