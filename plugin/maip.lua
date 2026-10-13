@@ -47,6 +47,20 @@ end, {
   desc = "MAIP: Initialize the plugin with optional key=value arguments",
 })
 
+-- Register :TruthlocksRegister before setup() so users can register immediately.
+vim.api.nvim_create_user_command("TruthlocksRegister", function(opts)
+  local email = vim.trim(opts.args or "")
+  if email == "" then
+    vim.notify("Usage: :TruthlocksRegister email@example.com", vim.log.levels.ERROR)
+    return
+  end
+  local register = require("maip.register")
+  register.register(email)
+end, {
+  nargs = 1,
+  desc = "Truthlocks: Register a developer account with your email",
+})
+
 -- Register the filetype for MAIP dashboard buffers
 vim.filetype.add({
   pattern = {

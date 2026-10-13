@@ -21,6 +21,7 @@ local agents = require("maip.agents")
 local trust = require("maip.trust")
 local telescope_mod = require("maip.telescope")
 local ui = require("maip.ui")
+local register = require("maip.register")
 
 local M = {}
 
@@ -76,6 +77,16 @@ function M.setup()
   end, {
     nargs = 0,
     desc = "MAIP: List all registered agents (Telescope or floating window)",
+  })
+
+  vim.api.nvim_create_user_command("TruthlocksRegister", function(cmd_opts)
+    M._truthlocks_register(cmd_opts)
+  end, {
+    nargs = 1,
+    desc = "Truthlocks: Register a developer account with your email",
+    complete = function()
+      return {}
+    end,
   })
 end
 
@@ -204,6 +215,18 @@ function M._list_agents()
       ui.float("MAIP Agents", lines, { width = 80 })
     end)
   end
+end
+
+--- Handler for :TruthlocksRegister <email>.
+--- Registers the developer and saves API key to ~/.truthlocks/credentials.json.
+--- @param cmd_opts table Command options from nvim_create_user_command.
+function M._truthlocks_register(cmd_opts)
+  local email = vim.trim(cmd_opts.args or "")
+  if email == "" then
+    ui.error("Usage: :TruthlocksRegister email@example.com")
+    return
+  end
+  register.register(email)
 end
 
 return M

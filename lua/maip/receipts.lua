@@ -29,6 +29,7 @@ local M = {}
 function M.create_for_buffer(bufnr, callback)
   bufnr = bufnr or vim.api.nvim_get_current_buf()
   local cfg = config.get()
+  if cfg.agent_id == "" then ui.error("Configure agent_id before creating a receipt"); if callback then callback(nil) end; return end
 
   local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false)
   local content = table.concat(lines, "\n")
@@ -44,17 +45,20 @@ function M.create_for_buffer(bufnr, callback)
 
   local payload = {
     agent_id = cfg.agent_id,
-    action_type = "file_edit",
-    input_hash = content_hash,
-    output_hash = content_hash,
+    receipt_type = "action",
+    action = "file_edit",
     metadata = {
-      file_path = file_path,
-      file_size = #content,
-      line_count = #lines,
+      file_path = vim.fn.fnamemodify(file_path, ":."),
+      artifact_hash = content_hash,
+      hash_scope = "editor_text_utf8_lf_joined",
+      kind = "file_edit",
+      requested_algorithm = cfg.signing_algorithm,
+      file_size = tostring(#content),
+      line_count = tostring(#lines),
       git_branch = git_branch,
       git_commit = git_commit,
       editor = "neovim",
-      plugin_version = "1.0.0",
+      plugin_version = "1.1.0",
       timestamp = utils.iso_timestamp(),
     },
   }
@@ -85,26 +89,28 @@ end
 --- @param callback function|nil Callback receiving the created receipt data.
 function M.create_for_commit(commit_hash, files_changed, callback)
   local cfg = config.get()
+  if cfg.agent_id == "" then ui.error("Configure agent_id before creating a receipt"); if callback then callback(nil) end; return end
 
   local commit_data = commit_hash .. "\n" .. table.concat(files_changed, "\n")
   local commit_content_hash = utils.sha256(commit_data)
 
   local git_branch = utils.git_branch()
-  local remote_url = utils.git_remote_url()
 
   local payload = {
     agent_id = cfg.agent_id,
-    action_type = "git_commit",
-    input_hash = commit_content_hash,
-    output_hash = commit_content_hash,
+    receipt_type = "action",
+    action = "git_commit",
     metadata = {
       commit_hash = commit_hash,
-      files_changed = files_changed,
-      files_count = #files_changed,
+      artifact_hash = commit_content_hash,
+      hash_scope = "commit_id_and_changed_paths",
+      kind = "git_commit",
+      requested_algorithm = cfg.signing_algorithm,
+      files_changed = table.concat(files_changed, "\n"),
+      files_count = tostring(#files_changed),
       git_branch = git_branch,
-      remote_url = remote_url,
       editor = "neovim",
-      plugin_version = "1.0.0",
+      plugin_version = "1.1.0",
       timestamp = utils.iso_timestamp(),
     },
   }
@@ -142,17 +148,17 @@ function M.verify(receipt_id, callback)
 
   ui.notify("Verifying receipt " .. receipt_id .. "...")
 
-  local encoded_id = vim.uri_encode(receipt_id, "rfc2396")
-  client.get("/agent-receipts/" .. encoded_id, {
+  client.get("/agent-receipts/verify/" .. vim.uri_encode(receipt_id), {
     on_success = function(data)
-      local status = data.status or "unknown"
-      local verified = status == "valid"
+      local verified = data.valid == true and data.signature_verified == true and data.verdict == "VALID"
+      local status = verified and "VALID" or (data.verdict ~= "VALID" and data.verdict or "INCOMPLETE") or "INCOMPLETE"
+      data.valid = verified
 
       local result_lines = {
         "Receipt Verification Result",
         "═══════════════════════════════════════",
         "",
-        "  Receipt ID:  " .. (data.receipt_id or receipt_id),
+        "  Receipt ID:  " .. receipt_id,
         "  Status:      " .. status,
         "  Verified:    " .. tostring(verified),
       }
@@ -160,21 +166,15 @@ function M.verify(receipt_id, callback)
       if data.agent_id then
         table.insert(result_lines, "  Agent ID:    " .. data.agent_id)
       end
-      if data.created_at then
-        table.insert(result_lines, "  Created:     " .. utils.format_time(data.created_at))
+      if data.timestamp then
+        table.insert(result_lines, "  Timestamp:   " .. utils.format_time(data.timestamp))
       end
-      if data.delegation_chain_hash then
-        table.insert(result_lines, "  Chain Hash:  " .. utils.truncate(data.delegation_chain_hash, 40))
+      if data.chain_hash then
+        table.insert(result_lines, "  Chain Hash:  " .. utils.truncate(data.chain_hash, 40))
       end
-      if status == "expired" then
+      if data.message then
         table.insert(result_lines, "")
-        table.insert(result_lines, "  ⚠ Receipt has expired")
-      elseif status == "superseded" then
-        table.insert(result_lines, "")
-        table.insert(result_lines, "  ⚠ Receipt has been superseded by a newer receipt")
-      elseif not verified then
-        table.insert(result_lines, "")
-        table.insert(result_lines, "  ✗ Receipt status is " .. status)
+        table.insert(result_lines, "  Message: " .. data.message)
       end
 
       table.insert(result_lines, "")
@@ -182,7 +182,7 @@ function M.verify(receipt_id, callback)
       ui.float("MAIP Receipt Verification", result_lines)
 
       if callback then
-        callback({ valid = verified, status = status, receipt = data })
+        callback(data)
       end
     end,
     on_error = function(err)
@@ -211,15 +211,20 @@ function M.list(filters, callback)
     params.agent_id = filters.agent_id
   end
   if filters.action_type then
-    params.action_type = filters.action_type
+    params.q = filters.action_type
   end
 
   client.get("/agent-receipts/filter", {
     params = params,
     on_success = function(data)
-      local receipt_list = data.receipts or data.items or data
+      local receipt_list = data.data or data.receipts or data.items or data
       if type(receipt_list) ~= "table" then
         receipt_list = {}
+      end
+      for _, receipt in ipairs(receipt_list) do
+        receipt.receipt_id = receipt.receipt_id or receipt.id
+        receipt.timestamp = receipt.timestamp or receipt.issued_at or receipt.created_at
+        receipt.action_type = receipt.action or receipt.receipt_type
       end
       if callback then
         callback(receipt_list)
@@ -257,15 +262,15 @@ function M.show_list_float(receipt_list)
   }
 
   for _, receipt in ipairs(receipt_list) do
-    local status_str = receipt.status or "unknown"
+    local verified_str = "Not checked"
     table.insert(
       lines,
       string.format(
         "  %-14s  %-14s  %-20s  %s",
         utils.truncate(receipt.receipt_id or "?", 14),
-        utils.truncate(receipt.action or receipt.action_type or "?", 14),
-        utils.format_time(receipt.created_at or receipt.timestamp or ""),
-        status_str
+        utils.truncate(receipt.action_type or "?", 14),
+        utils.format_time(receipt.timestamp or ""),
+        verified_str
       )
     )
   end

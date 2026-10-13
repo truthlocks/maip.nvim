@@ -16,10 +16,10 @@
 --- Machine Agent Identity Protocol integration for Neovim.
 ---
 --- Usage with lazy.nvim:
----   { "truthlocks/maip-neovim", opts = { api_key = "...", tenant_id = "..." } }
+---   { "truthlocks/maip.nvim", opts = { api_key = "...", tenant_id = "..." } }
 ---
 --- Usage with packer:
----   use { "truthlocks/maip-neovim", config = function()
+---   use { "truthlocks/maip.nvim", config = function()
 ---     require("maip").setup({ api_key = "...", tenant_id = "..." })
 ---   end }
 ---
@@ -31,7 +31,7 @@ local M = {}
 
 --- Plugin version.
 --- @type string
-M.version = "1.0.0"
+M.version = "1.1.0"
 
 --- Initialize the MAIP plugin with user configuration.
 --- Merges user options with defaults, registers commands, sets up keymaps,

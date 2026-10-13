@@ -2,7 +2,7 @@
 
 Author:   Truthlocks Inc.
 License:  Apache 2.0
-Version:  1.0.0
+Version:  1.1.0
 
 ==============================================================================
 CONTENTS                                                       *maip-contents*
@@ -39,7 +39,7 @@ to:
 lazy.nvim: ~
 >lua
   {
-    "truthlocks/maip-neovim",
+    "truthlocks/maip.nvim",
     opts = {
       api_key = "",           -- or set MAIP_API_KEY env var
       tenant_id = "",         -- or set MAIP_TENANT_ID env var
@@ -54,7 +54,7 @@ lazy.nvim: ~
 packer.nvim: ~
 >lua
   use {
-    "truthlocks/maip-neovim",
+    "truthlocks/maip.nvim",
     config = function()
       require("maip").setup({
         api_key = "",
@@ -84,7 +84,7 @@ Pass a table to `require("maip").setup(opts)` to override defaults.
                                                             *maip.api_url*
 api_url ~
   Type: `string`
-  Default: `"https://api.truthlocks.com/v1/machine-identity"`
+  Default: `"https://sandbox-api.truthlocks.com/v1"`
 
   The base URL for the MAIP API.
 
@@ -100,7 +100,7 @@ tenant_id ~
   Type: `string`
   Default: `""` (falls back to `MAIP_TENANT_ID` env var)
 
-  Your tenant ID for multi-tenant isolation.
+  Legacy optional metadata only; no tenant header is sent. Credentials determine access.
 
                                                            *maip.agent_id*
 agent_id ~
@@ -109,10 +109,19 @@ agent_id ~
 
   The agent ID for this Neovim instance. Set after registration.
 
+                                                 *maip.signing_algorithm*
+signing_algorithm ~
+  Type: `string`
+  Default: `"Ed25519"`
+
+  Requested-algorithm metadata only; the registered agent key controls signing.
+  Recognized values:
+  ES256, ES384, ES512, RS256, RS384, RS512, PS256, PS384, PS512, Ed25519
+
                                               *maip.auto_receipt_on_commit*
 auto_receipt_on_commit ~
   Type: `boolean`
-  Default: `true`
+  Default: `false`
 
   Automatically create a MAIP receipt when a git commit is made.
   Works with native git, fugitive, and neogit.
@@ -141,9 +150,9 @@ request_timeout ~
                                                        *maip.max_retries*
 max_retries ~
   Type: `number`
-  Default: `3`
+  Default: `2`
 
-  Maximum number of retry attempts for failed API requests.
+  Maximum read-request retries. Mutating requests are never retried automatically.
 
                                                         *maip.retry_delay*
 retry_delay ~
@@ -330,15 +339,14 @@ Generic (any statusline): ~
 ==============================================================================
 8. AUTO RECEIPT                                          *maip-auto-receipt*
 
-When |maip.auto_receipt_on_commit| is `true`, the plugin automatically
-creates a MAIP receipt whenever you make a git commit. This works with:
+Automatic receipts are disabled by default. When enabled, completed Fugitive and
+Neogit updates are checked for a changed HEAD. Saving COMMIT_EDITMSG does not
+establish that a commit completed and never creates a receipt. Commit receipts
+record a hash of the commit identifier and changed paths, not repository contents.
 
-  - Native git (COMMIT_EDITMSG / gitcommit filetype)
-  - tpope/vim-fugitive (FugitiveChanged event)
-  - NeogitOrg/neogit (NeogitCommitComplete event)
-
-The receipt includes the commit hash, list of changed files, branch
-name, and remote URL.
+Buffer receipts hash LF-joined editor lines. A saved file's encoding or final
+newline may differ. Verification requires valid=true, signature_verified=true,
+and verdict=VALID. Lists contain metadata, not independent signature verification.
 
 ==============================================================================
 9. API                                                          *maip-api*

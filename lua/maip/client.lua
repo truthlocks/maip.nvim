@@ -49,6 +49,9 @@ end
 local function build_curl_args(method, url, body, cfg)
   local args = {
     "curl",
+    "-q",
+    "--config",
+    "-",
     "-s",
     "-X",
     method,
@@ -56,18 +59,11 @@ local function build_curl_args(method, url, body, cfg)
     "Content-Type: application/json",
     "-H",
     "Accept: application/json",
-    "-H",
-    "X-API-Key: " .. cfg.api_key,
     "--max-time",
     tostring(cfg.request_timeout),
     "-w",
     "\n%{http_code}",
   }
-
-  if cfg.tenant_id ~= "" and not cfg.api_key:find("^tl_live_") then
-    table.insert(args, "-H")
-    table.insert(args, "X-Tenant-ID: " .. cfg.tenant_id)
-  end
 
   if body and (method == "POST" or method == "PUT" or method == "PATCH") then
     table.insert(args, "-d")
@@ -82,6 +78,12 @@ end
 --- @param output table List of output lines from curl.
 --- @return string body The response body.
 --- @return number status The HTTP status code.
+local function auth_config(cfg)
+  local value = (cfg.bearer_token or "") ~= "" and ("Authorization: Bearer " .. cfg.bearer_token) or ("X-API-Key: " .. cfg.api_key)
+  value = value:gsub("\\", "\\\\"):gsub('"', '\\"')
+  return 'header = "' .. value .. '"\n'
+end
+
 local function parse_response(output)
   if not output or #output == 0 then
     return "", 0
@@ -140,7 +142,7 @@ function M.request(method, path, opts)
   local stdout_lines = {}
   local stderr_lines = {}
 
-  vim.fn.jobstart(curl_args, {
+  local job = vim.fn.jobstart(curl_args, {
     stdout_buffered = true,
     stderr_buffered = true,
     on_stdout = function(_, data)
@@ -165,7 +167,7 @@ function M.request(method, path, opts)
       utils.schedule(function()
         if exit_code ~= 0 then
           local retry_max = cfg.max_retries
-          if opts.retry_count < retry_max then
+          if method == "GET" and opts.retry_count < retry_max then
             local delay = cfg.retry_delay * math.pow(2, opts.retry_count)
             vim.defer_fn(function()
               opts.retry_count = opts.retry_count + 1
@@ -184,7 +186,8 @@ function M.request(method, path, opts)
         local body, status = parse_response(stdout_lines)
 
         if status >= 200 and status < 300 then
-          local data, decode_err = utils.json_decode(body)
+          local data, decode_err
+          if body == "" then data = {} else data, decode_err = utils.json_decode(body) end
           if decode_err then
             if opts.on_error then
               opts.on_error("Failed to parse response: " .. decode_err)
@@ -200,7 +203,7 @@ function M.request(method, path, opts)
           end
         elseif status == 429 then
           local retry_max = cfg.max_retries
-          if opts.retry_count < retry_max then
+          if method == "GET" and opts.retry_count < retry_max then
             local delay = cfg.retry_delay * math.pow(2, opts.retry_count + 1)
             vim.defer_fn(function()
               opts.retry_count = opts.retry_count + 1
@@ -213,7 +216,7 @@ function M.request(method, path, opts)
           end
         else
           local retry_max = cfg.max_retries
-          if status >= 500 and opts.retry_count < retry_max then
+          if status >= 500 and method == "GET" and opts.retry_count < retry_max then
             local delay = cfg.retry_delay * math.pow(2, opts.retry_count)
             vim.defer_fn(function()
               opts.retry_count = opts.retry_count + 1
@@ -240,6 +243,12 @@ function M.request(method, path, opts)
       end)
     end,
   })
+  if job <= 0 then
+    if opts.on_error then opts.on_error("Could not start curl; ensure it is installed") end
+    return
+  end
+  vim.fn.chansend(job, auth_config(cfg))
+  vim.fn.chanclose(job, "stdin")
 end
 
 --- Make an async GET request.
@@ -274,5 +283,6 @@ end
 M._build_url = build_url
 M._build_curl_args = build_curl_args
 M._parse_response = parse_response
+M._auth_config = auth_config
 
 return M

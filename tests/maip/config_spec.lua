@@ -18,6 +18,8 @@ local config = require("maip.config")
 describe("maip.config", function()
   -- Reset state before each test
   before_each(function()
+    vim.env.MAIP_API_KEY = nil
+    vim.env.MAIP_TENANT_ID = nil
     config.options = {}
     config._initialized = false
   end)
@@ -35,7 +37,7 @@ describe("maip.config", function()
     end)
 
     it("should have boolean defaults for feature flags", function()
-      assert.is_true(config.defaults.auto_receipt_on_commit)
+      assert.is_false(config.defaults.auto_receipt_on_commit)
       assert.is_true(config.defaults.show_trust_virtual_text)
       assert.is_true(config.defaults.telescope)
     end)
@@ -43,7 +45,7 @@ describe("maip.config", function()
     it("should have numeric defaults for timeouts and intervals", function()
       assert.equals(60, config.defaults.trust_refresh_interval)
       assert.equals(30, config.defaults.request_timeout)
-      assert.equals(3, config.defaults.max_retries)
+      assert.equals(2, config.defaults.max_retries)
       assert.equals(1, config.defaults.retry_delay)
     end)
 
@@ -176,16 +178,9 @@ describe("maip.config", function()
       assert.truthy(err:match("api_key"))
     end)
 
-    it("should fail when tenant_id is empty", function()
+    it("should derive the tenant from credentials without a caller tenant header", function()
       config.setup({ api_key = "key", tenant_id = "" })
-      -- Unset env var for this test
-      local original = vim.env.MAIP_TENANT_ID
-      vim.env.MAIP_TENANT_ID = nil
-      config.setup({ api_key = "key", tenant_id = "" })
-      local ok, err = config.validate()
-      assert.is_false(ok)
-      assert.truthy(err:match("tenant_id"))
-      vim.env.MAIP_TENANT_ID = original
+      assert.is_true(config.validate())
     end)
 
     it("should pass when both api_key and tenant_id are set", function()

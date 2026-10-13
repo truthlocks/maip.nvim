@@ -44,33 +44,7 @@ function M.setup()
 
   M._augroup = vim.api.nvim_create_augroup("MAIPAutoReceipt", { clear = true })
 
-  -- Native gitcommit: fires when the COMMIT_EDITMSG buffer is written
-  vim.api.nvim_create_autocmd("BufWritePost", {
-    group = M._augroup,
-    pattern = "COMMIT_EDITMSG",
-    callback = function()
-      M._on_commit_write()
-    end,
-    desc = "MAIP: Create receipt on git commit message write",
-  })
-
-  -- Also listen for the gitcommit filetype in case of different git workflows
-  vim.api.nvim_create_autocmd("FileType", {
-    group = M._augroup,
-    pattern = "gitcommit",
-    callback = function(ev)
-      vim.api.nvim_create_autocmd("BufWritePost", {
-        group = M._augroup,
-        buffer = ev.buf,
-        once = true,
-        callback = function()
-          M._on_commit_write()
-        end,
-        desc = "MAIP: Create receipt on gitcommit filetype write",
-      })
-    end,
-    desc = "MAIP: Set up receipt hook for gitcommit buffers",
-  })
+  M._last_commit_hash = utils.git_commit_hash_full()
 
   -- Fugitive integration: listen for User event after commit
   vim.api.nvim_create_autocmd("User", {
@@ -107,20 +81,7 @@ end
 --- Handle the COMMIT_EDITMSG write event.
 --- Waits briefly for git to finish processing, then creates a receipt.
 function M._on_commit_write()
-  -- Defer slightly to let git finish the commit
-  vim.defer_fn(function()
-    local commit_hash = utils.git_commit_hash_full()
-    if not commit_hash then
-      return
-    end
-
-    local files_changed = utils.git_files_changed()
-    if #files_changed == 0 then
-      return
-    end
-
-    receipts.create_for_commit(commit_hash, files_changed, nil)
-  end, 500)
+  -- Intentionally no receipt: writing a commit message is not a completed commit.
 end
 
 --- Handle the fugitive FugitiveChanged event.
@@ -149,19 +110,7 @@ end
 
 --- Handle the neogit NeogitCommitComplete event.
 function M._on_neogit_commit()
-  vim.defer_fn(function()
-    local commit_hash = utils.git_commit_hash_full()
-    if not commit_hash then
-      return
-    end
-
-    local files_changed = utils.git_files_changed()
-    if #files_changed == 0 then
-      return
-    end
-
-    receipts.create_for_commit(commit_hash, files_changed, nil)
-  end, 500)
+  M._on_fugitive_changed()
 end
 
 --- Check whether auto-receipt is currently active.

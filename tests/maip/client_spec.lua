@@ -19,7 +19,7 @@ local client = require("maip.client")
 describe("maip.client", function()
   before_each(function()
     config.setup({
-      api_url = "https://api.test.truthlocks.com/v1/machine-identity",
+      api_url = "https://api.test.truthlocks.com/v1",
       api_key = "test-api-key",
       tenant_id = "test-tenant-id",
       agent_id = "test-agent-id",
@@ -32,7 +32,7 @@ describe("maip.client", function()
   describe("_build_url()", function()
     it("should build a URL without params", function()
       local url = client._build_url("/receipts", nil)
-      assert.equals("https://api.test.truthlocks.com/v1/machine-identity/receipts", url)
+      assert.equals("https://api.test.truthlocks.com/v1/receipts", url)
     end)
 
     it("should build a URL with query params", function()
@@ -45,7 +45,7 @@ describe("maip.client", function()
 
     it("should handle empty params table", function()
       local url = client._build_url("/agents", {})
-      assert.equals("https://api.test.truthlocks.com/v1/machine-identity/agents", url)
+      assert.equals("https://api.test.truthlocks.com/v1/agents", url)
     end)
 
     it("should URL-encode param values", function()
@@ -58,7 +58,7 @@ describe("maip.client", function()
     it("should append path to api_url correctly", function()
       local url = client._build_url("/agents/123/trust", nil)
       assert.equals(
-        "https://api.test.truthlocks.com/v1/machine-identity/agents/123/trust",
+        "https://api.test.truthlocks.com/v1/agents/123/trust",
         url
       )
     end)
@@ -69,7 +69,7 @@ describe("maip.client", function()
       local cfg = config.get()
       local args = client._build_curl_args(
         "GET",
-        "https://api.test.truthlocks.com/v1/machine-identity/receipts",
+        "https://api.test.truthlocks.com/v1/receipts",
         nil,
         cfg
       )
@@ -78,8 +78,9 @@ describe("maip.client", function()
       assert.truthy(vim.tbl_contains(args, "-s"))
       assert.truthy(vim.tbl_contains(args, "GET"))
       assert.truthy(vim.tbl_contains(args, "Content-Type: application/json"))
-      assert.truthy(vim.tbl_contains(args, "X-API-Key: test-api-key"))
-      assert.truthy(vim.tbl_contains(args, "X-Tenant-ID: test-tenant-id"))
+      assert.is_false(vim.tbl_contains(args, "X-API-Key: test-api-key"))
+      assert.truthy(client._auth_config(cfg):find("X%-API%-Key: test%-api%-key"))
+      assert.is_false(vim.tbl_contains(args, "X-Tenant-ID: test-tenant-id"))
     end)
 
     it("should include body for POST requests", function()
@@ -87,7 +88,7 @@ describe("maip.client", function()
       local body = '{"key":"value"}'
       local args = client._build_curl_args(
         "POST",
-        "https://api.test.truthlocks.com/v1/machine-identity/receipts",
+        "https://api.test.truthlocks.com/v1/receipts",
         body,
         cfg
       )
@@ -99,7 +100,7 @@ describe("maip.client", function()
       local cfg = config.get()
       local args = client._build_curl_args(
         "GET",
-        "https://api.test.truthlocks.com/v1/machine-identity/receipts",
+        "https://api.test.truthlocks.com/v1/receipts",
         '{"key":"value"}',
         cfg
       )

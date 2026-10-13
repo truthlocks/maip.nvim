@@ -39,7 +39,8 @@ function M.register(name, agent_type, callback)
     return
   end
 
-  agent_type = agent_type or "editor"
+  agent_type = agent_type or "service"
+  if agent_type == "editor" or agent_type == "ci" or agent_type == "reviewer" then agent_type = "service" end
 
   local payload = {
     display_name = name,
@@ -47,7 +48,7 @@ function M.register(name, agent_type, callback)
     scopes = { "file_edit", "git_commit", "code_review" },
     metadata = {
       editor = "neovim",
-      plugin_version = "1.0.0",
+      plugin_version = "1.1.0",
       platform = vim.loop.os_uname().sysname,
       neovim_version = vim.version().major .. "." .. vim.version().minor .. "." .. vim.version().patch,
     },
@@ -120,8 +121,7 @@ function M.get_trust(agent_id, callback)
     return
   end
 
-  local encoded_id = vim.uri_encode(agent_id, "rfc2396")
-  client.get("/agents/" .. encoded_id .. "/trust-score", {
+  client.get("/agents/" .. vim.uri_encode(agent_id) .. "/trust-score", {
     on_success = function(data)
       -- Update cache
       M._cache[agent_id] = M._cache[agent_id] or {}
@@ -147,13 +147,15 @@ end
 function M.list(callback)
   client.get("/agents", {
     on_success = function(data)
-      local agent_list = data.agents or data.items or data
+      local agent_list = data.data or data.agents or data.items or data
       if type(agent_list) ~= "table" then
         agent_list = {}
       end
 
       -- Update cache
       for _, agent in ipairs(agent_list) do
+        agent.name = agent.display_name or agent.name
+        agent.capabilities = agent.scopes or agent.capabilities
         local id = agent.agent_id or agent.id
         if id then
           M._cache[id] = agent
@@ -186,15 +188,14 @@ function M.show_details_float(agent_id)
     return
   end
 
-  local encoded_id = vim.uri_encode(agent_id, "rfc2396")
-  client.get("/agents/" .. encoded_id, {
+  client.get("/agents/" .. vim.uri_encode(agent_id), {
     on_success = function(data)
       local lines = {
         "Agent Details",
         "═══════════════════════════════════════",
         "",
         "  Agent ID:    " .. (data.agent_id or data.id or agent_id),
-        "  Name:        " .. (data.name or "N/A"),
+        "  Name:        " .. (data.display_name or data.name or "N/A"),
         "  Type:        " .. (data.agent_type or "N/A"),
         "  Status:      " .. (data.status or "N/A"),
         "  Trust Score: " .. tostring(data.trust_score or 0),
@@ -202,6 +203,7 @@ function M.show_details_float(agent_id)
         "",
       }
 
+      data.capabilities = data.scopes or data.capabilities
       if data.capabilities then
         table.insert(lines, "  Capabilities:")
         for _, cap in ipairs(data.capabilities) do

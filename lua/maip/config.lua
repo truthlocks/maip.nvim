@@ -19,16 +19,28 @@ local M = {}
 
 --- Default configuration values for the MAIP plugin.
 --- @type table
+--- All 10 supported signing algorithms.
+--- @type string[]
+M.supported_algorithms = {
+  "ES256", "ES384", "ES512",
+  "RS256", "RS384", "RS512",
+  "PS256", "PS384", "PS512",
+  "Ed25519",
+}
+
 M.defaults = {
-  api_url = "https://api.truthlocks.com/v1",
+  api_url = "https://sandbox-api.truthlocks.com/v1",
   api_key = "",
+  bearer_token = "",
   tenant_id = "",
   agent_id = "",
-  auto_receipt_on_commit = true,
+  --- Signing algorithm: ES256, ES384, ES512, RS256, RS384, RS512, PS256, PS384, PS512, Ed25519
+  signing_algorithm = "Ed25519",
+  auto_receipt_on_commit = false,
   show_trust_virtual_text = true,
   trust_refresh_interval = 60,
   request_timeout = 30,
-  max_retries = 3,
+  max_retries = 2,
   retry_delay = 1,
   keymaps = {
     create_receipt = "<leader>mc",
@@ -75,6 +87,7 @@ function M.setup(opts)
     M.options.agent_id = vim.env.MAIP_AGENT_ID or ""
   end
 
+  M.options.api_url = M.options.api_url:gsub("/+$", ""):gsub("/v1/machine%-identity$", "/v1"):gsub("/maip/v1$", "/v1")
   M._initialized = true
   return M.options
 end
@@ -99,11 +112,14 @@ end
 --- @return string|nil err Error message if configuration is invalid.
 function M.validate()
   local cfg = M.options
-  if cfg.api_key == "" then
-    return false, "api_key is required. Set it in setup() or MAIP_API_KEY env var."
+  if (cfg.api_key or "") == "" and (cfg.bearer_token or "") == "" then
+    return false, "api_key or bearer_token is required."
   end
-  if cfg.tenant_id == "" then
-    return false, "tenant_id is required. Set it in setup() or MAIP_TENANT_ID env var."
+  if not cfg.api_url:match("^https://[^/]+/v1$") then
+    return false, "api_url must be an HTTPS API origin ending in /v1."
+  end
+  if (cfg.api_key or ""):find("[\r\n]") or (cfg.bearer_token or ""):find("[\r\n]") then
+    return false, "Credentials must not contain line breaks."
   end
   return true, nil
 end
